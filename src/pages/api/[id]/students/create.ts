@@ -10,9 +10,9 @@ export default async function handler(
   }
 
   const subjectId = req.query.id as string;
-  const { name, student_number, class_number } = req.body;
+  const { name, student_number } = req.body;
 
-  if (!subjectId || !name || !student_number || !class_number) {
+  if (!subjectId || !name || !student_number) {
     return res.status(400).json({ error: "Invalid request body" });
   }
 
@@ -22,7 +22,7 @@ export default async function handler(
       .from("students")
       .select("*")
       .eq("student_number", student_number)
-      .eq("class_number", class_number)
+
       .maybeSingle();
 
     if (findError) throw findError;
@@ -33,7 +33,7 @@ export default async function handler(
     if (!student) {
       const { data: insertedStudent, error: insertError } = await supabaseAdmin
         .from("students")
-        .insert([{ name, student_number, class_number }])
+        .insert([{ name, student_number }])
         .select()
         .single();
 

@@ -4,7 +4,7 @@ interface Student {
   id: number;
   name: string;
   student_number: string;
-  class_number: string;
+
   created_at: string;
 }
 
@@ -23,7 +23,6 @@ export default function StudentAddModal({
 }: Props) {
   const [name, setName] = useState("");
   const [studentNumber, setStudentNumber] = useState("");
-  const [classNumber, setClassNumber] = useState("");
   const [loading, setLoading] = useState(false);
 
   // ✅ Enter / ESC 처리
@@ -42,13 +41,13 @@ export default function StudentAddModal({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, name, studentNumber, classNumber]);
+  }, [isOpen, name, studentNumber]);
 
   if (!isOpen) return null;
 
   // ✅ 실제 저장 로직
   const handleSubmit = async () => {
-    if (!name || !studentNumber || !classNumber) {
+    if (!name || !studentNumber) {
       alert("모든 값을 입력해주세요");
       return;
     }
@@ -64,7 +63,6 @@ export default function StudentAddModal({
         body: JSON.stringify({
           name,
           student_number: studentNumber,
-          class_number: classNumber,
         }),
       });
 
@@ -81,7 +79,6 @@ export default function StudentAddModal({
       // 입력값 초기화
       setName("");
       setStudentNumber("");
-      setClassNumber("");
 
       onClose();
     } finally {
@@ -108,13 +105,6 @@ export default function StudentAddModal({
             placeholder="학번"
             value={studentNumber}
             onChange={(e) => setStudentNumber(e.target.value)}
-          />
-
-          <input
-            className="w-full rounded border px-3 py-2 text-black"
-            placeholder="분반 (예: 01)"
-            value={classNumber}
-            onChange={(e) => setClassNumber(e.target.value)}
           />
         </div>
 

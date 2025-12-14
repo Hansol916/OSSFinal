@@ -39,12 +39,12 @@ export function calculateTotalScore(rows: RawGradeRow[]): number {
 export function getAbsoluteGrade(score: number): string {
   if (score >= 95) return "A+";
   if (score >= 90) return "A0";
-  if (score >= 85) return "A-";
-  if (score >= 80) return "B+";
-  if (score >= 75) return "B0";
-  if (score >= 70) return "B-";
-  if (score >= 65) return "C+";
-  if (score >= 60) return "C0";
+  if (score >= 85) return "B+";
+  if (score >= 80) return "B0";
+  if (score >= 75) return "C+";
+  if (score >= 70) return "C0";
+  if (score >= 65) return "D+";
+  if (score >= 60) return "D0";
   return "F";
 }
 
@@ -64,24 +64,29 @@ export function getCustomRelativeGrades(
   totals: number[],
   config: RelativeGradeConfig
 ): string[] {
-  // 높은 점수일수록 상위 → 내림차순 정렬
-  const sortedTotals = [...totals].sort((a, b) => b - a);
+  // 점수 + 원래 인덱스 묶기
+  const ranked = totals
+    .map((score, index) => ({ score, index }))
+    .sort((a, b) => b.score - a.score);
+
+  // index → rank 매핑
+  const rankMap = new Map<number, number>();
+  ranked.forEach((item, rank) => {
+    if (!rankMap.has(item.score)) {
+      rankMap.set(item.score, rank); // 동점자는 같은 rank
+    }
+  });
 
   return totals.map((score) => {
-    // 등수 (0부터 시작)
-    const rank = sortedTotals.indexOf(score);
-
-    // 상위 퍼센트
+    const rank = rankMap.get(score)!;
     const percent = (rank / totals.length) * 100;
 
-    // 설정된 구간에 맞는 등급 찾기
     for (const c of config) {
       if (percent <= c.maxPercent) {
         return c.grade;
       }
     }
 
-    // 예외 상황 fallback
     return "N/A";
   });
 }

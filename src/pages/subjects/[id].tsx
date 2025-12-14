@@ -1,5 +1,5 @@
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import Sidebar from "@/components/Sidebar";
 import StudentGrid from "@/components/StudentGrid";
 import CategoryPanel from "@/components/CategoryPanel";
@@ -11,77 +11,45 @@ import { RELATIVE_GRADES } from "@/constants/grades";
 import { RelativeGradeConfig } from "@/types/relativeGrade";
 import RelativeGradeCutModal from "@/components/RelativeGradeCutModal";
 import { Subject } from "@/types/subject";
-
-//   DB Student → UI StudentCardData 변환
-function toStudentCardData(
-  student: {
-    id: number;
-    name: string;
-    student_number: string;
-    class_number: string;
-    created_at: string;
-  },
-  categories: Category[]
-): StudentCardData {
-  return {
-    id: student.id,
-    name: student.name,
-    student_number: student.student_number,
-    class_number: student.class_number,
-    created_at: student.created_at,
-    scores: categories.map((c) => ({
-      category_id: c.id,
-      category_name: c.name,
-      score: null,
-      max_score: c.max_score,
-    })),
-    total: 0,
-    grade: "-",
-  };
-}
+import { toStudentCardData, getCategoryAverages } from "@/lib/subjectDetail";
 
 export default function SubjectDetailPage() {
   const router = useRouter();
   const { id } = router.query;
 
-  //임시 정보
   const [subject, setSubject] = useState<Subject | null>(null);
   useEffect(() => {
     if (!id) return;
-    console.log("📌 subject fetch id:", id);
     fetch(`/api/subjects/get?id=${id}`)
       .then((res) => res.json())
       .then((json) => {
-        console.log("📌 subject get 응답:", json);
         if (!json.data) return;
 
         setSubject(json.data);
-        setGradingType(json.data.grading_type); // ⭐ 동기화
+        setGradingType((prev) =>
+          prev === null ? json.data.grading_type : prev
+        ); //동기화
       });
   }, [id]);
 
   //State
   const [students, setStudents] = useState<StudentCardData[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isEditingScores, setIsEditingScores] = useState(false);
+
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [isAddCategoryOpen, setIsAddCategoryOpen] = useState(false);
   const [weightError, setWeightError] = useState<string | null>(null);
   const totalWeight = getTotalWeight(categories);
+  const categoryAverages = getCategoryAverages(categories, students);
 
   const [gradingType, setGradingType] = useState<
     "absolute" | "relative" | null
   >(null);
   const [isRelativeModalOpen, setIsRelativeModalOpen] = useState(false);
 
-  const [relativeConfig, setRelativeConfig] = useState<RelativeGradeConfig>(
-    () =>
-      RELATIVE_GRADES.map((grade, idx, arr) => ({
-        grade,
-        maxPercent: idx === arr.length - 1 ? 100 : 0,
-      }))
-  );
+  const [relativeConfig, setRelativeConfig] =
+    useState<RelativeGradeConfig | null>(null);
 
   //Fetch Categories
   async function fetchCategories() {
@@ -225,9 +193,6 @@ export default function SubjectDetailPage() {
       // 4️⃣ StudentCardData 재구성
       const cards: StudentCardData[] = students.map((stu: any) => {
         const myScores = scoreRows.filter((r: any) => r.student_id === stu.id);
-        console.log("categories:", categories);
-        console.log("students raw:", stuJson);
-        console.log("scores:", scoreRows);
 
         return {
           id: stu.id,
@@ -252,6 +217,20 @@ export default function SubjectDetailPage() {
       });
 
       setStudents(cards);
+      // ⭐ 5️⃣ 최초 진입 시 총점/등급 계산
+      const gradeRes = await fetch(`/api/${id}/grades/calculate`, {
+        method: "POST",
+      });
+      const gradeJson = await gradeRes.json();
+
+      const rows = Array.isArray(gradeJson.result) ? gradeJson.result : [];
+
+      setStudents((prev) =>
+        prev.map((stu) => {
+          const r = rows.find((x: any) => x.student_id === stu.id);
+          return r ? { ...stu, total: r.total, grade: r.grade } : stu;
+        })
+      );
     })();
   }, [id]);
 
@@ -272,34 +251,82 @@ export default function SubjectDetailPage() {
 
   useEffect(() => {
     if (!id || gradingType !== "relative") return;
+    if (relativeConfig !== null) return; // ✅ 이미 있으면 덮지 않음
 
     fetch(`/api/${id}/relative-grade/list`)
       .then((res) => res.json())
       .then((json) => {
-        // ✅ "비어있지 않을 때만" 덮어쓰기
         if (Array.isArray(json.data) && json.data.length > 0) {
+          // DB에 설정이 있으면 사용
           setRelativeConfig(json.data);
+        } else {
+          // DB에 없으면 기본 템플릿 생성
+          setRelativeConfig(
+            RELATIVE_GRADES.map((grade, idx, arr) => ({
+              grade,
+              maxPercent: idx === arr.length - 1 ? 100 : 0,
+            }))
+          );
         }
       });
-  }, [id, gradingType]);
+  }, [id, gradingType, relativeConfig]);
+
+  async function handleAddStudentsFromExcel(
+    rows: { name: string; student_number: string }[]
+  ) {
+    if (!id || rows.length === 0) return;
+
+    const res = await fetch(`/api/${id}/students/bulk-create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ students: rows }),
+    });
+
+    if (!res.ok) {
+      alert("엑셀 학생 추가 실패");
+      return;
+    }
+
+    const { added, skipped, students } = await res.json();
+
+    // ✅ UI 즉시 반영
+    setStudents((prev) => [
+      ...prev,
+      ...students.map((s: any) => toStudentCardData(s, categories)),
+    ]);
+
+    alert(`학생 ${added}명 추가됨 (${skipped}명 중복으로 건너뜀)`);
+  }
 
   return (
-    <div className="flex min-h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 min-h-screen ">
       <Sidebar />
 
-      <main className="flex-1 px-10 py-8">
+      <main className="flex-1 min-h-screen px-10 py-8 flex flex-col">
         {/* Header */}
         {subject && (
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900">{subject.name}</h1>
-            <p className="mt-1 text-gray-600">
-              분반 {subject.class_number ?? "-"} · 수강 인원 {students.length}명
+            <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
+              {subject.name}
+            </h1>
+            <p className="mt-2 text-sm text-gray-500">
+              분반{" "}
+              <span className="text-gray-700 font-medium">
+                {subject.class_number ?? "-"}
+              </span>
+              <span className="mx-2">·</span>
+              수강 인원{" "}
+              <span className="text-gray-700 font-medium">
+                {students.length}명
+              </span>
             </p>
           </div>
         )}
-        <div className="mb-6 flex items-center justify-between rounded-lg border bg-white p-4">
+        <div className="mb-6 flex items-center justify-between rounded-xl border bg-white px-6 py-4">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">평가 방식</span>
+            <span className="text-sm font-semibold text-gray-800">
+              평가 방식
+            </span>
 
             {/* 절대평가 */}
             <button
@@ -339,62 +366,59 @@ export default function SubjectDetailPage() {
           )}
         </div>
 
-        <div className="flex gap-8">
+        <div className="flex gap-8 flex-1 min-h-0 items-stretch">
           {/* Categories */}
-          <div className="w-80 shrink-0">
-            <CategoryPanel
-              categories={categories}
-              weightError={weightError}
-              totalWeight={totalWeight}
-              onAdd={() => {
-                setEditingCategory(null);
-                setIsAddCategoryOpen(true);
-              }}
-              onEdit={(c) => {
-                setEditingCategory(c);
-                setIsAddCategoryOpen(true);
-              }}
-              onDelete={handleDeleteCategory}
-            />
+          <div className="w-80 shrink-0 flex flex-col">
+            <div className="flex-1">
+              <CategoryPanel
+                categories={categories}
+                weightError={weightError}
+                totalWeight={totalWeight}
+                categoryAverages={categoryAverages}
+                onAdd={() => {
+                  setEditingCategory(null);
+                  setIsAddCategoryOpen(true);
+                }}
+                onEdit={(c) => {
+                  setEditingCategory(c);
+                  setIsAddCategoryOpen(true);
+                }}
+                onDelete={handleDeleteCategory}
+              />
+            </div>
           </div>
 
           {/* Students */}
-          <div className="flex-1 rounded-lg border bg-white p-6 shadow-sm">
-            <div className="mb-4 flex justify-between items-center">
-              <h2 className="text-xl font-semibold">학생 목록</h2>
-
-              <div className="flex gap-2">
-                {/* 점수 수정 버튼 */}
-                {!isEditingScores ? (
-                  <button
-                    onClick={() => setIsEditingScores(true)}
-                    className="rounded-md border px-4 py-2 text-sm"
-                  >
-                    점수 수정
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => setIsEditingScores(false)}
-                    className="rounded-md bg-blue-600 px-4 py-2 text-sm text-white"
-                  >
-                    수정 완료
-                  </button>
-                )}
-
-                {/* 기존 학생 추가 버튼 */}
-                <button
-                  onClick={() => setIsStudentModalOpen(true)}
-                  className="rounded-md bg-blue-600 px-5 py-2 text-sm text-white hover:bg-blue-700"
-                >
-                  + 학생 추가
-                </button>
-              </div>
-            </div>
-
+          <div
+            className="flex-1 rounded-lg border bg-white p-6 shadow-sm flex flex-col"
+            style={{ height: "110vh" }}
+          >
             <StudentGrid
               students={students}
-              editable={isEditingScores}
-              onScoreChange={(studentId, categoryId, score) => {
+              onAddStudent={() => setIsStudentModalOpen(true)}
+              onAddStudentsFromExcel={handleAddStudentsFromExcel}
+              onDeleteStudent={async (studentId) => {
+                const ok = confirm("이 학생을 과목에서 제거하시겠습니까?");
+                if (!ok) return;
+
+                const res = await fetch(
+                  `/api/${id}/students/delete?student_id=${studentId}`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ student_id: studentId }),
+                  }
+                );
+
+                if (!res.ok) {
+                  alert("학생 제거 실패");
+                  return;
+                }
+
+                // UI 즉시 반영
+                setStudents((prev) => prev.filter((s) => s.id !== studentId));
+              }}
+              onScoreChange={async (studentId, categoryId, score) => {
                 // 1️⃣ UI 즉시 반영
                 setStudents((prev) =>
                   prev.map((stu) =>
@@ -409,8 +433,8 @@ export default function SubjectDetailPage() {
                   )
                 );
 
-                // 2️⃣ DB 저장 → 계산
-                fetch(`/api/${id}/scores/upsert`, {
+                // 2️⃣ 점수 저장
+                const upsertRes = await fetch(`/api/${id}/scores/upsert`, {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({
@@ -418,33 +442,26 @@ export default function SubjectDetailPage() {
                     category_id: categoryId,
                     score,
                   }),
-                })
-                  .then((res) => {
-                    if (!res.ok) throw new Error("score upsert failed");
-                    return fetch(`/api/${id}/grades/calculate`, {
-                      method: "POST",
-                    });
-                  })
-                  .then((res) => res.json())
-                  .then((result) => {
-                    const rows = Array.isArray(result)
-                      ? result
-                      : Array.isArray(result?.data)
-                      ? result.data
-                      : [];
+                });
 
-                    setStudents((prev) =>
-                      prev.map((stu) => {
-                        const r = rows.find(
-                          (x: any) => x.student_id === stu.id
-                        );
-                        return r
-                          ? { ...stu, total: r.total, grade: r.grade }
-                          : stu;
-                      })
-                    );
+                if (!upsertRes.ok) return;
+
+                // 3️⃣ 총점 / 등급 재계산
+                const gradeRes = await fetch(`/api/${id}/grades/calculate`, {
+                  method: "POST",
+                });
+                const gradeJson = await gradeRes.json();
+
+                const rows = Array.isArray(gradeJson.result)
+                  ? gradeJson.result
+                  : [];
+
+                setStudents((prev) =>
+                  prev.map((stu) => {
+                    const r = rows.find((x: any) => x.student_id === stu.id);
+                    return r ? { ...stu, total: r.total, grade: r.grade } : stu;
                   })
-                  .catch(console.error);
+                );
               }}
             />
           </div>
@@ -481,6 +498,8 @@ export default function SubjectDetailPage() {
         onChange={setRelativeConfig}
         onClose={() => setIsRelativeModalOpen(false)}
         onSave={async () => {
+          if (!relativeConfig) return; // ✅ null 방어
+
           await fetch(`/api/${id}/relative-grade/save`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
