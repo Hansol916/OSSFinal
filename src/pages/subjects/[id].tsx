@@ -13,6 +13,7 @@ import RelativeGradeCutModal from "@/components/RelativeGradeCutModal";
 import { Subject } from "@/types/subject";
 import { toStudentCardData, getCategoryAverages } from "@/lib/subjectDetail";
 
+
 export default function SubjectDetailPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -322,6 +323,7 @@ export default function SubjectDetailPage() {
             </p>
           </div>
         )}
+
         <div className="mb-6 flex items-center justify-between rounded-xl border bg-white px-6 py-4">
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-gray-800">
