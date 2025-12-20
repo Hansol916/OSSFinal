@@ -13,7 +13,6 @@ import RelativeGradeCutModal from "@/components/RelativeGradeCutModal";
 import { Subject } from "@/types/subject";
 import { toStudentCardData, getCategoryAverages } from "@/lib/subjectDetail";
 
-
 export default function SubjectDetailPage() {
   const router = useRouter();
   const { id } = router.query;
@@ -275,8 +274,6 @@ export default function SubjectDetailPage() {
   async function handleAddStudentsFromExcel(
     rows: { name: string; student_number: string }[]
   ) {
-    if (!id || rows.length === 0) return;
-
     const res = await fetch(`/api/${id}/students/bulk-create`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -284,19 +281,16 @@ export default function SubjectDetailPage() {
     });
 
     if (!res.ok) {
-      alert("엑셀 학생 추가 실패");
-      return;
+      throw new Error("학생 추가 실패");
     }
 
-    const { added, skipped, students } = await res.json();
+    const result = await res.json();
 
-    // ✅ UI 즉시 반영
-    setStudents((prev) => [
-      ...prev,
-      ...students.map((s: any) => toStudentCardData(s, categories)),
-    ]);
+    // ✅ students.map 절대 사용 ❌
+    alert(`학생 추가 완료: ${result.added}명, 건너뜀: ${result.skipped}명`);
 
-    alert(`학생 ${added}명 추가됨 (${skipped}명 중복으로 건너뜀)`);
+    // ✅ 서버 기준으로 다시 fetch (정석)
+    await fetchStudents(categories);
   }
 
   return (
