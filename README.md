@@ -77,11 +77,8 @@
 
 - List 화면
     - 과목 목록 페이지
-    
-    <!-- ![과목 목록 페이지](image1.png) -->
-    <img src="public/image1.png" width= 300px />
 
-    <img src = "public/image.png" width = 300px>
+    <img src = "public/image.png" width = 500px>
     과목 목록 페이지
     
     - 개설된 과목 목록을 카드 형태로 표시
@@ -89,8 +86,7 @@
 - CRUD 기능 별 화면
     - 과목 상세 페이지(`/subjects/[id]`)
     
-    ![과목 상세 페이지](./assets/image1.png)
-    
+    <img src = "public/image1.png" width = 500px>
     과목 상세 페이지
     
     - 좌측: 성적 항목 관리
@@ -109,11 +105,11 @@
     - AddCategoryModal.tsx
         - 새로운 성적 항목을 추가하기 위한 모달 컴포넌트
         
-        ![성적 항목 추가 모달](image2.png)
+        <img src = "public/image2.png" width = 500px>
         
         성적 항목 추가 모달
         
-        ![성적 항목 수정 모달](image%203.png)
+        <img src = "public/image3.png" width = 500px>
         
         성적 항목 수정 모달
         
@@ -122,7 +118,7 @@
     - StudentAddModal.tsx
         - 학생을 수동으로 추가하기 위한 입력 모달 컴포넌트
         
-        ![학생 추가 모달](image%204.png)
+        <img src = "public/image4.png" width = 500px>
         
         학생 추가 모달
         
@@ -131,18 +127,18 @@
     - SubjectAddModal.tsx
         - 새로운 과목을 생성하기 위한 입력 모달 컴포넌트
         
-        ![과목 추가 모달](image%205.png)
+       <img src = "public/image5.png" width = 500px>
         
         과목 추가 모달
         
-        ![과목 수정 모달](image%206.png)
+        <img src = "public/image6.png" width = 500px>
         
         과목 수정 모달
         
     - RelativeGradeCutModal.tsx
         - 상대평가 사용 시 학점별 비율을 설정하기 위한 모달 컴포넌트
         
-        ![상대 평가 비율 설정 모달](image 7.png)
+        <img src = "public/image7.png" width = 500px>
         
         상대 평가 비율 설정 모달
         
