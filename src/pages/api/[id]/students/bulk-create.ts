@@ -16,49 +16,64 @@ export default async function handler(
     return res.status(400).json({ error: "invalid request" });
   }
 
-  // 1️⃣ 기존 학생 조회 (학번 기준)
-  const studentNumbers = students.map((s) => s.student_number);
+  try {
+    // 1️⃣ 엑셀에 들어온 학번 목록
+    const studentNumbers = students.map((s) => s.student_number);
 
-  const { data: existing } = await supabaseAdmin
-    .from("students")
-    .select("id, student_number")
-    .in("student_number", studentNumbers);
-
-  const existingSet = new Set(existing?.map((s) => s.student_number) ?? []);
-
-  // 2️⃣ 신규 / 중복 분리
-  const newStudents = students.filter(
-    (s) => !existingSet.has(s.student_number)
-  );
-
-  // 3️⃣ 신규 학생 insert
-  let insertedStudents: any[] = [];
-
-  if (newStudents.length > 0) {
-    const { data, error } = await supabaseAdmin
+    // 2️⃣ students 테이블에서 이미 존재하는 학생 조회
+    const { data: existingStudents } = await supabaseAdmin
       .from("students")
-      .insert(newStudents)
-      .select();
+      .select("id, student_number")
+      .in("student_number", studentNumbers);
 
-    if (error) {
-      return res.status(500).json({ error });
+    const studentMap = new Map<string, string>();
+    existingStudents?.forEach((s) => {
+      studentMap.set(s.student_number, s.id);
+    });
+
+    // 3️⃣ 아직 없는 학생만 insert 시도 (중복 학번 방지)
+    const newStudents = students.filter(
+      (s) => !studentMap.has(s.student_number)
+    );
+
+    if (newStudents.length > 0) {
+      const { data: inserted } = await supabaseAdmin
+        .from("students")
+        .insert(newStudents)
+        .select("id, student_number");
+
+      inserted?.forEach((s) => {
+        studentMap.set(s.student_number, s.id);
+      });
     }
 
-    insertedStudents = data ?? [];
+    // 4️⃣ 이미 이 과목에 등록된 학생 조회
+    const { data: alreadyLinked } = await supabaseAdmin
+      .from("subject_students")
+      .select("student_id")
+      .eq("subject_id", subjectId);
+
+    const alreadySet = new Set(alreadyLinked?.map((s) => s.student_id) ?? []);
+
+    // 5️⃣ subject_students 연결 (중복 제거)
+    const toConnect = Array.from(studentMap.values())
+      .filter((studentId) => !alreadySet.has(studentId))
+      .map((studentId) => ({
+        subject_id: subjectId,
+        student_id: studentId,
+      }));
+
+    if (toConnect.length > 0) {
+      await supabaseAdmin.from("subject_students").insert(toConnect);
+    }
+
+    // 6️⃣ 결과 반환 (의미 정확)
+    return res.status(200).json({
+      added: toConnect.length,
+      skipped: students.length - toConnect.length,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: "bulk create failed" });
   }
-
-  // 4️⃣ subject_students 연결 (신규 + 기존)
-  const allStudentIds = [...(existing ?? []), ...insertedStudents].map((s) => ({
-    subject_id: subjectId,
-    student_id: s.id,
-  }));
-
-  await supabaseAdmin.from("subject_students").insert(allStudentIds);
-
-  // 5️⃣ 결과 반환
-  res.status(200).json({
-    added: insertedStudents.length,
-    skipped: students.length - insertedStudents.length,
-    students: insertedStudents,
-  });
 }
